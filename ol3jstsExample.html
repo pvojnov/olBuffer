@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>JSTS Example</title>
+<script src="https://code.jquery.com/jquery-1.11.2.min.js"></script>
+<!-- <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script> -->
+
+<link rel="stylesheet" href="../ol/v3.13.1/css/ol.css" type="text/css">
+<script src="../ol/v3.13.1/build/ol.js"></script>
+<script src="../jsts/lib/0.17.0/javascript.util.min.js"></script>
+<script src="../jsts/lib/0.17.0/jsts.min.js"></script>
+</head>
+<body>
+<div class="container-fluid">
+
+<div class="row-fluid">
+  <div class="span12">
+    <div id="map" class="map"></div>
+  </div>
+</div>
+
+</div>
+<script>
+// NOCOMPILE
+// this example uses JSTS for which we don't have an externs file.
+var source = new ol.source.Vector();
+$.ajax('roads-seoul.geojson').then(function(response) {
+  var format = new ol.format.GeoJSON();
+  var features = format.readFeatures(response,
+      {featureProjection: 'EPSG:3857'});
+
+  var parser = new jsts.io.olParser();
+
+  for (var i = 0; i < features.length; i++) {
+    var feature = features[i];
+    // convert the OpenLayers geometry to a JSTS geometry
+    var jstsGeom = parser.read(feature.getGeometry());
+
+    // create a buffer of 40 meters around each line
+    var buffered = jstsGeom.buffer(40);
+
+    // convert back from JSTS and replace the geometry on the feature
+    feature.setGeometry(parser.write(buffered));
+  }
+
+  source.addFeatures(features);
+});
+var vectorLayer = new ol.layer.Vector({
+  source: source
+});
+
+var rasterLayer = new ol.layer.Tile({
+  source: new ol.source.MapQuest({
+    layer: 'osm'
+  })
+});
+
+var map = new ol.Map({
+  layers: [rasterLayer, vectorLayer],
+  target: document.getElementById('map'),
+  view: new ol.View({
+    center: ol.proj.fromLonLat([126.979293, 37.528787]),
+    zoom: 15
+  })
+});
+
+</script>
+</body>
+</html>

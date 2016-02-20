@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Draw features example</title>
+<script src="https://code.jquery.com/jquery-1.11.2.min.js"></script>
+<!-- <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script> -->
+
+<link rel="stylesheet" href="../ol/v3.13.1/css/ol.css" type="text/css">
+<!-- <script src="../ol/v3.13.1/build/ol.js"></script> -->
+<script src="../ol/v3.13.1/build/ol-debug.js"></script>
+<!-- <script src="../jsts/lib/0.17.0/javascript.util.min.js"></script> -->
+<script src="../jsts/lib/javascript.util.js"></script>
+<!-- <script src="../jsts/lib/0.17.0/jsts.min.js"></script> -->
+<script src="../jsts/lib/jsts.js"></script>
+
+</head>
+<body>
+<div class="container-fluid">
+
+<div class="row-fluid">
+  <div class="span12">
+    <div id="map" class="map" style="width: 100%; height: 600px; touch-action: none;"></div>
+    <form class="form-inline">
+      <label>Geometry type &nbsp;</label>
+      <select id="type">
+        <option value="None">None</option>
+        <option value="Point">Point</option>
+        <option value="LineString">LineString</option>
+        <option value="Polygon">Polygon</option>
+        <option value="Circle">Circle</option>
+        <option value="Square">Square</option>
+        <option value="Box">Box</option>
+      </select>     
+    </form>
+    <button id="drawBuffer">Draw Buffer</button>
+    <input id="bufferVal" type="number" value=0></input>
+    <div>
+        <button id="reset">Reset</button>
+    </div>
+    <div>
+        <p id="outputWKT" style="font-family:courier;"></p>
+    </div>
+    
+  </div>
+</div>
+
+</div>
+<script>
+var raster = new ol.layer.Tile({
+  source: new ol.source.MapQuest({layer: 'osm'})
+});
+
+var source = new ol.source.Vector({wrapX: false});
+
+var vector = new ol.layer.Vector({
+  source: source,
+  style: new ol.style.Style({
+    fill: new ol.style.Fill({
+      color: 'rgba(255, 255, 255, 0.2)'
+    }),
+    stroke: new ol.style.Stroke({
+      color: '#B0171F',
+      width: 2
+    }),
+    image: new ol.style.Circle({
+      radius: 7,
+      fill: new ol.style.Fill({
+        color: '#B0171F'
+      })
+    })
+  })
+});
+
+var map = new ol.Map({
+  layers: [raster, vector],
+  target: 'map',
+  view: new ol.View({
+    center: ol.proj.fromLonLat([16, 45.82]),
+    zoom: 14
+  })
+});
+
+var typeSelect = document.getElementById('type');
+
+var draw; // global so we can remove it later
+function addInteraction() {
+  var value = typeSelect.value;
+  if (value !== 'None') {
+    var geometryFunction, maxPoints;
+    if (value === 'Square') {
+      value = 'Circle';
+      geometryFunction = ol.interaction.Draw.createRegularPolygon(4);
+    } else if (value === 'Box') {
+      value = 'LineString';
+      maxPoints = 2;
+      geometryFunction = function(coordinates, geometry) {
+        if (!geometry) {
+          geometry = new ol.geom.Polygon(null);
+        }
+        var start = coordinates[0];
+        var end = coordinates[1];
+        geometry.setCoordinates([
+          [start, [start[0], end[1]], end, [end[0], start[1]], start]
+        ]);
+        return geometry;
+      };
+    }
+    draw = new ol.interaction.Draw({
+      source: source,
+      type: /** @type {ol.geom.GeometryType} */ (value),
+      geometryFunction: geometryFunction,
+      maxPoints: maxPoints
+    });
+    map.addInteraction(draw);
+  }
+}
+
+
+/**
+ * Let user change the geometry type.
+ * @param {Event} e Change event.
+ */
+typeSelect.onchange = function(e) {
+  map.removeInteraction(draw);
+  addInteraction();
+};
+
+addInteraction();
+
+
+// initialize compoenents
+//-------------------------------
+var bufferVal = document.getElementById('bufferVal'),
+    drawBufferBtn = document.getElementById('drawBuffer'),
+    outputWKT = document.getElementById('outputWKT'),
+    resetBtn = document.getElementById('reset');
+
+// assign the draw buffer function to the draw buffer buttn
+drawBufferBtn.onclick = function(event) {
+  drawBuffer()
+}
+
+// onchange
+
+bufferVal.onchange = function(event) {
+  drawBuffer()
+}
+
+// assign reset fuinction
+resetBtn.onclick = function(event) {
+  resetMap()
+}
+
+function resetMap() {
+    outputWKT.innerText = '';
+    vector.getSource().clear();    
+};
+
+
+
+
+
+// write geometry as WKT
+function getWKT(){
+    
+    if (bufferVal.value <= 0) {
+        // ol reader
+        var format = new ol.format.WKT();
+        
+        outputWKT.innerText = format.writeFeatures(vector.getSource().getFeatures())
+    } else {
+        // jsts reader
+        var parser = new jsts.io.olParser(),
+            writer = new jsts.io.WKTWriter(),
+            collectionGeom = new jsts.geom.GeometryCollection();
+        
+        vector.getSource().getFeatures().forEach(function(feature){
+            var olGeom = feature.getGeometry(),
+                olGeom = olGeom instanceof ol.geom.Circle ? ol.geom.Polygon.fromCircle(olGeom) : olGeom;
+            
+            // convert the OpenLayers geometry to a JSTS geometry
+            var jstsGeom = parser.read(olGeom);
+            
+            collectionGeom = collectionGeom.union(jstsGeom);
+            
+            outputWKT.innerText = writer.write(collectionGeom)
+        });
+    };
+};
+
+// crete a buffer arroun geometries in the vector layer
+function drawBuffer (){
+    if (!bufferVal.value) return;
+    
+    var parser = new jsts.io.olParser();
+  
+    src = vector.getSource()
+    features = src.getFeatures()
+    features.forEach(function(feature){
+        // store the original geometry so it can be acessed later
+        if (!feature.get('geometryOrig')) {
+            feature.set('geometryOrig', feature.getGeometry())
+        };
+        
+        var olGeom = feature.get('geometryOrig'),
+            olGeom = olGeom instanceof ol.geom.Circle ? ol.geom.Polygon.fromCircle(olGeom) : olGeom;
+            
+        // convert the OpenLayers geometry to a JSTS geometry
+        var jstsGeom = parser.read(olGeom);
+
+        // create a buffer around each geometry or return the original geometry if the buffer is les then 0
+        var buffered = bufferVal.value > 0 ? jstsGeom.buffer(bufferVal.value) : jstsGeom;
+
+        // convert back from JSTS and replace the geometry on the feature
+        geom = parser.write(buffered);
+        feature.setGeometry(geom);
+    });
+    
+    getWKT()
+};
+
+
+
+
+</script>
+</body>
+</html>
